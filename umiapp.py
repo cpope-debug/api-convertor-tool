@@ -12,13 +12,12 @@ from dotenv import load_dotenv
 load_dotenv()
 app = Flask(__name__)
 
-# ✅ Enable universal CORS (allows all origins for testing)
+# ✅ Enable universal CORS for testing
 CORS(app)
 
 cached_token = None
 token_expiry = 0
 
-# Function to get Extensiv API token
 def get_token():
     global cached_token, token_expiry
     if cached_token and time.time() < token_expiry:
@@ -141,16 +140,35 @@ def export_northline():
     for item in order_data.get("OrderItems", []):
         product_code = item.get("ItemIdentifier", {}).get("Sku", "")
         qty = item.get("Qty", "")
-        serials = [str(alloc.get("ReceiveItemId", "")) for alloc in item.get("ReadOnly", {}).get("Allocations", [])]
-        batch = ",".join(serials)
 
-        row = [
-            account_code, order_date, "", customer_order_number, customer_ref_number,
-            warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
-            receiver_postcode, receiver_contact, receiver_phone, product_code, qty, batch, "",
-            special_instructions
-        ]
-        writer.writerow(row)
+        # ✅ Serial number mapping logic
+        serials = []
+        if "OutboundSerialNumbers" in item and item["OutboundSerialNumbers"]:
+            serials = item["OutboundSerialNumbers"]
+        elif "OutboundSerialNumbers" in order_data.get("ReadOnly", {}) and order_data["ReadOnly"]["OutboundSerialNumbers"]:
+            serials = order_data["ReadOnly"]["OutboundSerialNumbers"]
+        if not serials:
+            serials = [str(alloc.get("ReceiveItemId", "")) for alloc in item.get("ReadOnly", {}).get("Allocations", [])]
+
+        # ✅ One row per serial number
+        if serials:
+            for serial in serials:
+                row = [
+                    account_code, order_date, "", customer_order_number, customer_ref_number,
+                    warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
+                    receiver_postcode, receiver_contact, receiver_phone, product_code, 1, serial, "",
+                    special_instructions
+                ]
+                writer.writerow(row)
+        else:
+            # If no serials, write one row with qty
+            row = [
+                account_code, order_date, "", customer_order_number, customer_ref_number,
+                warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
+                receiver_postcode, receiver_contact, receiver_phone, product_code, qty, "", "",
+                special_instructions
+            ]
+            writer.writerow(row)
 
     output.seek(0)
     return Response(output.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment;filename=northline_export.csv"})
