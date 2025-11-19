@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 load_dotenv()
 app = Flask(__name__)
 
-# Enable CORS for your Netlify domain
-CORS(app, resources={r"/*": {"origins": "https://urbantomotoconverter.netlify.app"}})
+# ✅ Enable universal CORS (allows all origins for testing)
+CORS(app)
 
 cached_token = None
 token_expiry = 0
