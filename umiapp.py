@@ -1,8 +1,10 @@
+import io
+import csv
 import os
 import time
 import base64
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -12,6 +14,7 @@ app = Flask(__name__)
 cached_token = None
 token_expiry = 0
 
+# Function to get Extensiv API token
 def get_token():
     global cached_token, token_expiry
     if cached_token and time.time() < token_expiry:
@@ -65,8 +68,7 @@ def get_order():
         "Content-Type": "application/json"
     }
 
-    order_id = order_ref
-    url = f"https://secure-wms.com/orders/{order_id}?detail=All&itemdetail=All"
+    url = f"https://secure-wms.com/orders/{order_ref}?detail=All&itemdetail=All"
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
@@ -77,8 +79,77 @@ def get_order():
     except Exception:
         return jsonify({"error": "Invalid JSON response from API"}), 500
 
-    # ✅ Debug: Return full JSON response
     return jsonify(order_data)
+
+@app.route("/export-northline", methods=["GET"])
+def export_northline():
+    order_ref = request.args.get("reference")
+    if not order_ref:
+        return jsonify({"error": "Order reference is required"}), 400
+
+    try:
+        token = get_token()
+    except Exception as e:
+        return jsonify({"error": f"Token error: {str(e)}"}), 500
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    url = f"https://secure-wms.com/orders/{order_ref}?detail=All&itemdetail=All"
+    response = requests.get(url, headers=headers)
+
+    if response.status_code != 200:
+        return jsonify({"error": f"Failed to fetch order: {response.text}"}), response.status_code
+
+    try:
+        order_data = response.json()
+    except Exception:
+        return jsonify({"error": "Invalid JSON response from API"}), 500
+
+    # Prepare CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    header = [
+        "AccountCode", "OrderDate", "RequiredDeliveryDate", "CustomerOrderNumber", "CustomerRefNumber",
+        "Warehouse", "ReceiverName", "ReceiverStreetAddress1", "ReceiverSuburb", "ReceiverState",
+        "ReceiverPostcode", "ReceiverContact", "ReceiverPhone", "ProductCode", "Qty", "Batch", "ExpiryDate",
+        "SpecialInstructions"
+    ]
+    writer.writerow(header)
+
+    account_code = "8UNI48"
+    warehouse = "PERTH"
+    order_date = order_data.get("ReadOnly", {}).get("CreationDate", "")
+    customer_order_number = order_data.get("ReferenceNum", "")
+    customer_ref_number = customer_order_number
+    receiver = order_data.get("ShipTo", {})
+    receiver_name = receiver.get("CompanyName", "")
+    receiver_address = receiver.get("Address1", "")
+    receiver_suburb = receiver.get("City", "")
+    receiver_state = receiver.get("State", "")
+    receiver_postcode = receiver.get("Zip", "")
+    receiver_contact = receiver.get("Name", "")
+    receiver_phone = receiver.get("PhoneNumber", "")
+    special_instructions = order_data.get("Notes", "")
+
+    for item in order_data.get("OrderItems", []):
+        product_code = item.get("ItemIdentifier", {}).get("Sku", "")
+        qty = item.get("Qty", "")
+        serials = [str(alloc.get("ReceiveItemId", "")) for alloc in item.get("ReadOnly", {}).get("Allocations", [])]
+        batch = ",".join(serials)
+
+        row = [
+            account_code, order_date, "", customer_order_number, customer_ref_number,
+            warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
+            receiver_postcode, receiver_contact, receiver_phone, product_code, qty, batch, "",
+            special_instructions
+        ]
+        writer.writerow(row)
+
+    output.seek(0)
+    return Response(output.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment;filename=northline_export.csv"})
 
 if __name__ == "__main__":
     app.run(debug=True)
