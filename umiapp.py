@@ -65,7 +65,7 @@ def get_order():
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    url = f"https://secure-wms.com/orders?referenceNum={order_ref}"
+    url = f"https://secure-wms.com/orders?filter=referenceNumber eq '{order_ref}'"
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
