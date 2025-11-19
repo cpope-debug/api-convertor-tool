@@ -1,4 +1,3 @@
-# umiapp.py
 import os
 import time
 import base64
@@ -9,7 +8,6 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-
 app = Flask(__name__)
 
 cached_token = None
@@ -43,9 +41,14 @@ def get_token():
     response = requests.post("https://secure-wms.com/AuthServer/api/Token", headers=headers, data=data)
     response.raise_for_status()
     token_data = response.json()
+
     cached_token = token_data["access_token"]
     token_expiry = time.time() + token_data.get("expires_in", 3600) - 60
     return cached_token
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"}), 200
 
 @app.route("/get-order", methods=["GET"])
 def get_order():
@@ -53,24 +56,42 @@ def get_order():
     if not order_ref:
         return jsonify({"error": "Order reference is required"}), 400
 
-    token = get_token()
+    try:
+        token = get_token()
+    except Exception as e:
+        return jsonify({"error": f"Token error: {str(e)}"}), 500
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-
     url = f"https://secure-wms.com/orders?referenceNum={order_ref}"
     response = requests.get(url, headers=headers)
+
     if response.status_code != 200:
         return jsonify({"error": f"Failed to fetch order: {response.text}"}), response.status_code
 
-    order_data = response.json()
+    try:
+        order_data = response.json()
+    except Exception:
+        return jsonify({"error": "Invalid JSON response from API"}), 500
+
+    if "orderItems" not in order_data or not order_data.get("orderItems"):
+        return jsonify({"error": "No order items found"}), 404
+
     csv_file = f"/tmp/{order_ref}_northline.csv"
-    with open(csv_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["OrderNumber", "SKU", "Qty"])
-        for item in order_data.get("orderItems", []):
-            writer.writerow([order_data["referenceNum"], item["itemIdentifier"]["sku"], item["qty"]])
+    try:
+        with open(csv_file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["OrderNumber", "SKU", "Qty"])
+            for item in order_data.get("orderItems", []):
+                writer.writerow([
+                    order_data.get("referenceNum", "N/A"),
+                    item["itemIdentifier"]["sku"],
+                    item["qty"]
+                ])
+    except Exception as e:
+        return jsonify({"error": f"Failed to write CSV: {str(e)}"}), 500
 
     return send_file(csv_file, as_attachment=True)
 
