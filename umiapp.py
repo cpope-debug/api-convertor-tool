@@ -34,7 +34,7 @@ def get_token():
     }
     data = {
         "grant_type": "client_credentials",
-        "tpl": f"{{{tpl_key}}}",
+        "tpl": f"{tpl_key}",
         "user_login_id": "4"
     }
 
