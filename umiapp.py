@@ -5,11 +5,15 @@ import time
 import base64
 import requests
 from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 app = Flask(__name__)
+
+# Enable CORS for your Netlify domain
+CORS(app, resources={r"/*": {"origins": "https://urbantomotoconverter.netlify.app"}})
 
 cached_token = None
 token_expiry = 0
