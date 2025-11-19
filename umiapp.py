@@ -34,7 +34,7 @@ def get_token():
     }
     data = {
         "grant_type": "client_credentials",
-        "tpl": f"{tpl_key}",
+        "tpl": tpl_key,  # ✅ Correct format
         "user_login_id": "4"
     }
 
@@ -65,36 +65,23 @@ def get_order():
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    order_id = order_ref  # since you will pass the actual order_id in the query
+
+    # Use order_id directly
+    order_id = order_ref
     url = f"https://secure-wms.com/orders/{order_id}?detail=All&itemdetail=All"
+
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
         return jsonify({"error": f"Failed to fetch order: {response.text}"}), response.status_code
 
+    # ✅ Debug: Return raw API response for inspection
     try:
         order_data = response.json()
     except Exception:
         return jsonify({"error": "Invalid JSON response from API"}), 500
 
-    if "orderItems" not in order_data or not order_data.get("orderItems"):
-        return jsonify({"error": "No order items found"}), 404
-
-    csv_file = f"/tmp/{order_ref}_northline.csv"
-    try:
-        with open(csv_file, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["OrderNumber", "SKU", "Qty"])
-            for item in order_data.get("orderItems", []):
-                writer.writerow([
-                    order_data.get("referenceNum", "N/A"),
-                    item["itemIdentifier"]["sku"],
-                    item["qty"]
-                ])
-    except Exception as e:
-        return jsonify({"error": f"Failed to write CSV: {str(e)}"}), 500
-
-    return send_file(csv_file, as_attachment=True)
+    return jsonify(order_data)  # TEMP: Debug mode
 
 if __name__ == "__main__":
     app.run(debug=True)
