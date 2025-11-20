@@ -101,8 +101,8 @@ def export_northline():
         "Content-Type": "application/json"
     }
 
-    # Updated URL to include serial numbers
-    url = f"https://secure-wms.com/orders/{order_ref}?detail=OutboundSerialNumbers&itemdetail=AllocationsWithDetail"
+    # ✅ Updated URL to include both detail and itemdetail for serials
+    url = f"https://secure-wms.com/orders/{order_ref}?detail=All,OutboundSerialNumbers&itemdetail=AllocationsWithDetail"
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
@@ -113,7 +113,7 @@ def export_northline():
     except Exception:
         return jsonify({"error": "Invalid JSON response from API"}), 500
 
-    # Prepare CSV
+    # Prepare CSV matching Northline template
     output = io.StringIO()
     writer = csv.writer(output)
     header = [
@@ -142,16 +142,23 @@ def export_northline():
     for item in order_data.get("OrderItems", []):
         product_code = item.get("ItemIdentifier", {}).get("Sku", "")
         qty = item.get("Qty", "")
-        allocations = item.get("ReadOnly", {}).get("Allocations", [])
 
-        # Extract serial numbers from AllocationsWithDetail
+        # ✅ Serial number mapping logic
         serials = []
-        for alloc in allocations:
-            serial = alloc.get("SerialNumber")
-            if serial:
-                serials.append(serial)
-            else:
-                serials.append(str(alloc.get("ReceiveItemId", "")))
+        if "OutboundSerialNumbers" in item and item["OutboundSerialNumbers"]:
+            serials = item["OutboundSerialNumbers"]
+        elif "OutboundSerialNumbers" in order_data.get("ReadOnly", {}) and order_data["ReadOnly"]["OutboundSerialNumbers"]:
+            serials = order_data["ReadOnly"]["OutboundSerialNumbers"]
+
+        # ✅ If still empty, check allocations for SerialNumber
+        if not serials:
+            for alloc in item.get("ReadOnly", {}).get("Allocations", []):
+                if alloc.get("SerialNumber"):
+                    serials.append(alloc.get("SerialNumber"))
+                else:
+                    serials.append(str(alloc.get("ReceiveItemId", "")))
+
+        logging.info(f"DEBUG: Product {product_code} serials -> {serials}")
 
         # Write rows
         if serials:
