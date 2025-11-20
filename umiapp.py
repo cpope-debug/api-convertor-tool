@@ -4,6 +4,7 @@ import os
 import time
 import base64
 import requests
+import logging
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -11,12 +12,12 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 app = Flask(__name__)
-
-# ✅ Enable universal CORS for testing
 CORS(app)
 
 cached_token = None
 token_expiry = 0
+
+logging.basicConfig(level=logging.INFO)
 
 def get_token():
     global cached_token, token_expiry
@@ -141,17 +142,19 @@ def export_northline():
         product_code = item.get("ItemIdentifier", {}).get("Sku", "")
         qty = item.get("Qty", "")
 
-# ✅ Serial number mapping logic using logging
-logging.basicConfig(level=logging.INFO)
-logging.info(f'DEBUG Allocations: {item.get("ReadOnly", {}).get("Allocations", [])}')
-serials = []
-for alloc in item.get('ReadOnly', {}).get('Allocations', []):
-    serial = alloc.get('detail', {}).get('serialNumber')
-    if serial:
-        serials.append(serial)
-    else:
-        serials.append(str(alloc.get('ReceiveItemId', '')))
-        # ✅ One row per serial number
+        # Debug allocations
+        logging.info(f"DEBUG Allocations: {item.get('ReadOnly', {}).get('Allocations', [])}")
+
+        # Extract serial numbers from allocations
+        serials = []
+        for alloc in item.get("ReadOnly", {}).get("Allocations", []):
+            serial = alloc.get("detail", {}).get("serialNumber")
+            if serial:
+                serials.append(serial)
+            else:
+                serials.append(str(alloc.get("ReceiveItemId", "")))
+
+        # Write rows
         if serials:
             for serial in serials:
                 row = [
@@ -162,7 +165,6 @@ for alloc in item.get('ReadOnly', {}).get('Allocations', []):
                 ]
                 writer.writerow(row)
         else:
-            # If no serials, write one row with qty
             row = [
                 account_code, order_date, "", customer_order_number, customer_ref_number,
                 warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
