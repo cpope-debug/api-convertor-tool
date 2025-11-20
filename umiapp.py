@@ -65,6 +65,8 @@ def get_order():
     try:
         token = get_token()
     except Exception as e:
+        logging.error(f"Token error: {str(e)}")
+        logging.error(traceback.format_exc())
         return jsonify({"error": f"Token error: {str(e)}"}), 500
 
     headers = {
@@ -76,11 +78,15 @@ def get_order():
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
+        logging.error(f"Failed to fetch order: {response.text}")
         return jsonify({"error": f"Failed to fetch order: {response.text}"}), response.status_code
 
     try:
         order_data = response.json()
-    except Exception:
+        logging.info(f"ORDER DATA: {order_data}")
+    except Exception as e:
+        logging.error(f"Invalid JSON response: {str(e)}")
+        logging.error(traceback.format_exc())
         return jsonify({"error": "Invalid JSON response from API"}), 500
 
     return jsonify(order_data)
@@ -94,6 +100,8 @@ def export_northline():
     try:
         token = get_token()
     except Exception as e:
+        logging.error(f"Token error: {str(e)}")
+        logging.error(traceback.format_exc())
         return jsonify({"error": f"Token error: {str(e)}"}), 500
 
     headers = {
@@ -101,86 +109,89 @@ def export_northline():
         "Content-Type": "application/json"
     }
 
-    # ✅ Updated URL to include both detail and itemdetail for serials
     url = f"https://secure-wms.com/orders/{order_ref}?detail=All,OutboundSerialNumbers&itemdetail=AllocationsWithDetail"
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
+        logging.error(f"Failed to fetch order: {response.text}")
         return jsonify({"error": f"Failed to fetch order: {response.text}"}), response.status_code
 
     try:
         order_data = response.json()
-    except Exception:
+        logging.info(f"ORDER DATA: {order_data}")
+    except Exception as e:
+        logging.error(f"Invalid JSON response: {str(e)}")
+        logging.error(traceback.format_exc())
         return jsonify({"error": "Invalid JSON response from API"}), 500
 
-    # Prepare CSV matching Northline template
-    output = io.StringIO()
-    writer = csv.writer(output)
-    header = [
-        "AccountCode", "OrderDate", "RequiredDeliveryDate", "CustomerOrderNumber", "CustomerRefNumber",
-        "Warehouse", "ReceiverName", "ReceiverStreetAddress1", "ReceiverSuburb", "ReceiverState",
-        "ReceiverPostcode", "ReceiverContact", "ReceiverPhone", "ProductCode", "Qty", "Batch", "ExpiryDate",
-        "SpecialInstructions"
-    ]
-    writer.writerow(header)
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        header = [
+            "AccountCode", "OrderDate", "RequiredDeliveryDate", "CustomerOrderNumber", "CustomerRefNumber",
+            "Warehouse", "ReceiverName", "ReceiverStreetAddress1", "ReceiverSuburb", "ReceiverState",
+            "ReceiverPostcode", "ReceiverContact", "ReceiverPhone", "ProductCode", "Qty", "Batch", "ExpiryDate",
+            "SpecialInstructions"
+        ]
+        writer.writerow(header)
 
-    account_code = "8UNI48"
-    warehouse = "PERTH"
-    order_date = order_data.get("ReadOnly", {}).get("CreationDate", "")
-    customer_order_number = order_data.get("ReferenceNum", "")
-    customer_ref_number = customer_order_number
-    receiver = order_data.get("ShipTo", {})
-    receiver_name = receiver.get("CompanyName", "")
-    receiver_address = receiver.get("Address1", "")
-    receiver_suburb = receiver.get("City", "")
-    receiver_state = receiver.get("State", "")
-    receiver_postcode = receiver.get("Zip", "")
-    receiver_contact = receiver.get("Name", "")
-    receiver_phone = receiver.get("PhoneNumber", "")
-    special_instructions = order_data.get("Notes", "")
+        account_code = "8UNI48"
+        warehouse = "PERTH"
+        order_date = order_data.get("ReadOnly", {}).get("CreationDate", "")
+        customer_order_number = order_data.get("ReferenceNum", "")
+        customer_ref_number = customer_order_number
+        receiver = order_data.get("ShipTo", {})
+        receiver_name = receiver.get("CompanyName", "")
+        receiver_address = receiver.get("Address1", "")
+        receiver_suburb = receiver.get("City", "")
+        receiver_state = receiver.get("State", "")
+        receiver_postcode = receiver.get("Zip", "")
+        receiver_contact = receiver.get("Name", "")
+        receiver_phone = receiver.get("PhoneNumber", "")
+        special_instructions = order_data.get("Notes", "")
 
-    for item in order_data.get("OrderItems", []):
-        product_code = item.get("ItemIdentifier", {}).get("Sku", "")
-        qty = item.get("Qty", "")
+        for item in order_data.get("OrderItems", []):
+            product_code = item.get("ItemIdentifier", {}).get("Sku", "")
+            qty = item.get("Qty", "")
 
-        # ✅ Serial number mapping logic
-        serials = []
-        if "OutboundSerialNumbers" in item and item["OutboundSerialNumbers"]:
-            serials = item["OutboundSerialNumbers"]
-        elif "OutboundSerialNumbers" in order_data.get("ReadOnly", {}) and order_data["ReadOnly"]["OutboundSerialNumbers"]:
-            serials = order_data["ReadOnly"]["OutboundSerialNumbers"]
+            serials = []
+            if "OutboundSerialNumbers" in item and item["OutboundSerialNumbers"]:
+                serials = item["OutboundSerialNumbers"]
+            elif "OutboundSerialNumbers" in order_data.get("ReadOnly", {}) and order_data["ReadOnly"]["OutboundSerialNumbers"]:
+                serials = order_data["ReadOnly"]["OutboundSerialNumbers"]
+            if not serials:
+                for alloc in item.get("ReadOnly", {}).get("Allocations", []):
+                    if alloc.get("SerialNumber"):
+                        serials.append(alloc.get("SerialNumber"))
+                    else:
+                        serials.append(str(alloc.get("ReceiveItemId", "")))
 
-        # ✅ If still empty, check allocations for SerialNumber
-        if not serials:
-            for alloc in item.get("ReadOnly", {}).get("Allocations", []):
-                if alloc.get("SerialNumber"):
-                    serials.append(alloc.get("SerialNumber"))
-                else:
-                    serials.append(str(alloc.get("ReceiveItemId", "")))
+            logging.info(f"Product {product_code} serials: {serials}")
 
-        logging.info(f"DEBUG: Product {product_code} serials -> {serials}")
-
-        # Write rows
-        if serials:
-            for serial in serials:
+            if serials:
+                for serial in serials:
+                    row = [
+                        account_code, order_date, "", customer_order_number, customer_ref_number,
+                        warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
+                        receiver_postcode, receiver_contact, receiver_phone, product_code, 1, serial, "",
+                        special_instructions
+                    ]
+                    writer.writerow(row)
+            else:
                 row = [
                     account_code, order_date, "", customer_order_number, customer_ref_number,
                     warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
-                    receiver_postcode, receiver_contact, receiver_phone, product_code, 1, serial, "",
+                    receiver_postcode, receiver_contact, receiver_phone, product_code, qty, "", "",
                     special_instructions
                 ]
                 writer.writerow(row)
-        else:
-            row = [
-                account_code, order_date, "", customer_order_number, customer_ref_number,
-                warehouse, receiver_name, receiver_address, receiver_suburb, receiver_state,
-                receiver_postcode, receiver_contact, receiver_phone, product_code, qty, "", "",
-                special_instructions
-            ]
-            writer.writerow(row)
 
-    output.seek(0)
-    return Response(output.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment;filename=northline_export.csv"})
+        output.seek(0)
+        return Response(output.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment;filename=northline_export.csv"})
+    except Exception as e:
+        logging.error(f"CSV generation failed: {str(e)}")
+        logging.error(traceback.format_exc())
+        return jsonify({"error": f"CSV generation failed: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
