@@ -141,9 +141,9 @@ def export_northline():
         product_code = item.get("ItemIdentifier", {}).get("Sku", "")
         qty = item.get("Qty", "")
 
-# ✅ Serial number mapping logic from allocations with flush debug
-import sys
-print('DEBUG Allocations:', item.get('ReadOnly', {}).get('Allocations', []), file=sys.stdout, flush=True)
+# ✅ Serial number mapping logic using logging
+logging.basicConfig(level=logging.INFO)
+logging.info(f'DEBUG Allocations: {item.get("ReadOnly", {}).get("Allocations", [])}')
 serials = []
 for alloc in item.get('ReadOnly', {}).get('Allocations', []):
     serial = alloc.get('detail', {}).get('serialNumber')
