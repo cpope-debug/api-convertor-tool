@@ -141,15 +141,16 @@ def export_northline():
         product_code = item.get("ItemIdentifier", {}).get("Sku", "")
         qty = item.get("Qty", "")
 
-        # ✅ Serial number mapping logic
-        serials = []
-        if "OutboundSerialNumbers" in item and item["OutboundSerialNumbers"]:
-            serials = item["OutboundSerialNumbers"]
-        elif "OutboundSerialNumbers" in order_data.get("ReadOnly", {}) and order_data["ReadOnly"]["OutboundSerialNumbers"]:
-            serials = order_data["ReadOnly"]["OutboundSerialNumbers"]
-        if not serials:
-            serials = [str(alloc.get("ReceiveItemId", "")) for alloc in item.get("ReadOnly", {}).get("Allocations", [])]
-
+# ✅ Serial number mapping logic from allocations with flush debug
+import sys
+print('DEBUG Allocations:', item.get('ReadOnly', {}).get('Allocations', []), file=sys.stdout, flush=True)
+serials = []
+for alloc in item.get('ReadOnly', {}).get('Allocations', []):
+    serial = alloc.get('detail', {}).get('serialNumber')
+    if serial:
+        serials.append(serial)
+    else:
+        serials.append(str(alloc.get('ReceiveItemId', '')))
         # ✅ One row per serial number
         if serials:
             for serial in serials:
