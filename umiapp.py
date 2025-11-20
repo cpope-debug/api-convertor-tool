@@ -101,7 +101,8 @@ def export_northline():
         "Content-Type": "application/json"
     }
 
-    url = f"https://secure-wms.com/orders/{order_ref}?detail=All&itemdetail=All"
+    # Updated URL to include serial numbers
+    url = f"https://secure-wms.com/orders/{order_ref}?detail=OutboundSerialNumbers&itemdetail=AllocationsWithDetail"
     response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
@@ -141,14 +142,12 @@ def export_northline():
     for item in order_data.get("OrderItems", []):
         product_code = item.get("ItemIdentifier", {}).get("Sku", "")
         qty = item.get("Qty", "")
+        allocations = item.get("ReadOnly", {}).get("Allocations", [])
 
-        # Debug allocations
-        logging.info(f"DEBUG Allocations: {item.get('ReadOnly', {}).get('Allocations', [])}")
-
-        # Extract serial numbers from allocations
+        # Extract serial numbers from AllocationsWithDetail
         serials = []
-        for alloc in item.get("ReadOnly", {}).get("Allocations", []):
-            serial = alloc.get("detail", {}).get("serialNumber")
+        for alloc in allocations:
+            serial = alloc.get("SerialNumber")
             if serial:
                 serials.append(serial)
             else:
